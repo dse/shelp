@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -o errexit
+set -o pipefail
+set -o nounset
+shopt -s lastpipe
+
+# .NAME
+#     shelp - a shitty help system for shell scripts
+# .SYNOPSIS
+#     shelp <programname|filename>
+# .DESCRIPTION
+#     The `shelp` utility finds the specified program name, looks for
+#     specially formatted comments, and sends a more nicely formatted
+#     version to a pager.
+#
+#     If standard output is not a terminal, `shelp` does not use a
+#     pager.
+#
+#     Instead of a program name, you may specify a relative or
+#     absolute pathname to a script file if your pathname contains a
+#     slash ("/").
+# .PAGER
+#
+#     If standard output is a terminal, shelp looks for each
+#     of the following and uses the first successful match:
+#
+#     - the "SHELP_PAGER" environment variable
+#     - the "PAGER" environment variable
+#     - a "less" executable
+#     - a "more" executable
+#
+#     If none of the above are found, shelp sends the help output
+#     directly to standard output.
+
+main () {
+    if (( $# < 1 )) ; then
+        >&2 echo "shelp: not enough arguments"
+        exit 1
+    fi
+
+    if (( $# > 1 )) ; then
+        >&2 echo "shelp: too many arguments"
+        exit 1
+    fi
+
+    local pager
+    if [[ -v SHELP_PAGER ]] ; then
+        pager="${SHELP_PAGER}"
+    elif [[ -v PAGER ]] ; then
+        pager="${PAGER}"
+    fi
+
+    local -a paths
+    if [[ "$1" = */* ]] ; then
+        paths=("$1")
+    else
+        { type -a -p "$1" || true; } | readarray -t paths
+        if (( ! "${#paths[@]}" )) ; then
+            >&2 echo "shelp: $1: command not found"
+            exit 1
+        fi
+    fi
+
+    temp="$(mktemp)"
+
+    local exe
+    for exe in "${paths}" ; do
+        format-shelp <"${exe}" >"${temp}"
+        if grep . "${temp}" >/dev/null 2>/dev/null ; then
+            if [[ -v pager ]] && [[ -t 1 ]] ; then
+                cat "${temp}" | $pager
+            elif [[ -t 1 ]] ; then
+                if which less >/dev/null 2>/dev/null; then
+                    cat "${temp}" | less
+                elif which more >/dev/null 2>/dev/null; then
+                    cat "${temp}" | more
+                else
+                    cat "${temp}"
+                fi
+            else
+                cat "${temp}"
+            fi
+            return 0
+        fi
+    done
+
+    >&2 echo "shelp: $1: no help found; try man, perldoc, etc."
+    return 1
+}
+
+format-shelp () {
+    expand | shelpfmt.awk
+}
+
+AT_EXIT () {
+    [[ -v temp ]]  && [[ -e "${temp}" ]]  && rm "${temp}"  || true
+}
+
+###############################################################################
+trap AT_EXIT EXIT
+main "$@"
