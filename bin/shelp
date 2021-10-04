@@ -89,7 +89,7 @@ main () {
 }
 
 format-shelp () {
-    expand | shelpfmt.awk
+    expand | shelpfmt
 }
 
 AT_EXIT () {
