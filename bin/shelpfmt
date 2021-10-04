@@ -1,7 +1,6 @@
-#!/bin/sh
-# -*- mode: awk -*-
-true + /; exec gawk -f "$0"; exit; / {} # polyglot
-# awk script starts here
+#!/usr/bin/env perl
+use warnings;
+use strict;
 
 # .NAME
 #     shelpfmt - underlying formatting engine for shelp
@@ -10,50 +9,56 @@ true + /; exec gawk -f "$0"; exit; / {} # polyglot
 # .DESCRIPTION
 #     shelpfmt takes its input and sends a more nicely
 #     formatted version of it to stdout.
+#
+#     It is the underlying formatter used by shelp.
 
-BEGIN {
-    mode = 0
-    blank = 0
-    started = 0
-}
+our $mode = 0;
+our $blank = 0;
+our $started = 0;
 
-# line that is neither a comment nor blank ends shelp section
-mode && /^ *[^#]/ {
-    if (!blank) { print "" }
-    blank = 1
-    mode = 0
-    next
-}
+while (<>) {
+    s{\R\z}{};
 
-# line starting with # followed by . starts a shelp section
-/^ *# *\. */ {
-    if (!started) { started = 1 }
-    else if (!blank) { print "" }
-    mode = 1
-    gsub(/^ *# *\. */, "")
-    if (match($0, /^(.*?)[ ]+-[ ]+(.*)$/, matches)) {
-        print toupper(matches[1]), "-", matches[2]
-    } else {
-        print toupper($0)
+    # line that is neither a comment nor blank ends shelp section
+    if ($mode && /^ *[^#]/) {
+        print("\n") if !$blank;
+        $blank = 1;
+        $mode = 0;
+        next;
     }
-    print ""
-    blank = 1
-    next
+
+    # line starting with # followed by . starts a shelp section
+    if (/^ *# *\. */) {
+        if (!$started) {
+            $started = 1;
+        } else {
+            print("\n") if !$blank;
+        }
+        $mode = 1;
+        s/^ *\# *\. */\n/;
+        if (/^(?<heading>.*?)[ ]+-[ ]+(?<subheading>.*)$/) {
+            printf("%s - %s\n", uc($+{heading}), $+{subheading});
+        } else {
+            printf("%s\n", uc($_));
+        }
+        $blank = 1;
+        next;
+    }
+
+    # blank lines and blank comment lines separate section names
+    # and/or paragraphs
+    if ($mode && (/^ *# *$/ || /^ *$/)) {
+        print("\n") if !$blank;
+        $blank = 1;
+        next;
+    }
+
+    if ($mode && /^ *# ?/) {
+        s/^ *\# ?/    /;
+        print "$_\n";
+        $blank = 0;
+        next;
+    }
 }
 
-# blank lines and comment lines separate section names and/or
-# paragraphs
-mode && (/^ *# *$/ || /^ *$/) {
-    if (!blank) { print ""; blank = 1 }
-    next
-}
-
-mode && /^ *# */ {
-    gsub(/^ *# */, "    ")
-    print; blank = 0
-    next
-}
-
-END {
-    if (!blank) { print "" }
-}
+print("\n") if !$blank;
